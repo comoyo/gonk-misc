@@ -1,8 +1,8 @@
-service fakeperm /system/bin/fakeperm
+service gonksched /system/bin/gonksched
     class main
     user root
 
-service fakesched /system/bin/fakesched
+service fakeappops /system/bin/fakeappops
     class main
     user root
 
@@ -15,6 +15,13 @@ service rilproxy /system/bin/rilproxy
     socket rilproxy stream 660 root system
     user root
     group radio
+
+service nfcd /system/bin/nfcd
+    class main
+    oneshot
+    socket nfcd stream 660 nfc nfc
+    user nfc
+    group system
 
 on boot
     exec /system/bin/rm -r /data/local/tmp

@@ -15,9 +15,6 @@ if [ "$TARGET_ARCH" = "x86" ]; then
 ac_add_options --target=i686-android-linux
 else
 ac_add_options --target=arm-linux-androideabi
-# Disabled for now since this disables enough stripping that our
-# system.img on the sgs2 exceeds 100MB and heimdall fails to work right.
-#ac_add_options --enable-profiling
 fi
 ac_add_options --with-gonk="$GONK_PATH"
 ac_add_options --with-gonk-toolchain-prefix="$TARGET_TOOLS_PREFIX"
@@ -33,6 +30,10 @@ if [ "${B2G_NOOPT:-0}" != "0" ]; then
 ac_add_options --disable-optimize
 fi
 
+if [ "${B2G_DUMP_PAINTING:-0}" != "0" ]; then
+ac_add_options --enable-dump-painting
+fi
+
 ac_add_options --with-ccache
 
 if [ "${DISABLE_JEMALLOC:-0}" != "0" ]; then
@@ -45,13 +46,19 @@ ac_add_options --enable-profiling
 ac_add_options --disable-jemalloc
 fi
 
+if [ "${B2G_PROFILING:-0}" != "0" ]; then
+ac_add_options --enable-profiling
+fi
+
 if [ "$HOST_OS" != "linux" ]; then
 ac_add_options --disable-crashreporter
 fi
 
 if [ "${B2G_UPDATER:-0}" != "0" ]; then
-ac_add_options --enable-updater
-ac_add_options --enable-update-channel="${B2G_UPDATE_CHANNEL:-nightly}"
+  # Note: if B2G_UPDATE_CHANNEL isn't set, then configure will use its own
+  # default, which is "default".
+  ac_add_options --enable-updater
+  ac_add_options --enable-update-channel="${B2G_UPDATE_CHANNEL}"
 fi
 
 ac_add_options --enable-update-packaging
@@ -68,6 +75,13 @@ fi
 if [ "${ENABLE_GLOBAL_PRELINK:-0}" != 0 ]; then
 # Disable ELF_HACK on B2G for prelink.
 ac_add_options --disable-elf-hack
+fi
+
+if [ "$TARGET_BUILD_VARIANT" = eng ]; then
+  ac_add_options --enable-content-sandbox-reporter
+  # bug 979947 - Engineering builds should have
+  # the profiler enabled by default
+  ac_add_options --enable-profiling
 fi
 
 export CFLAGS="$TARGET_EXTRA_GLOBAL_CFLAGS $CFLAGS"

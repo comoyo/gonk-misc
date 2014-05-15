@@ -241,6 +241,8 @@ b2g_ps_add_table_headers(Table& t, bool show_threads)
   t.start_row();
   t.add("NAME");
   t.add(show_threads ? "TID" : "PID");
+  t.add("PPID");
+  t.add("CPU(s)");
   t.add("NICE");
   t.add("USS");
   t.add("PSS");
@@ -277,6 +279,8 @@ print_b2g_info(bool show_threads)
     t.start_row();
     t.add(p->name());
     t.add(p->pid());
+    t.add(p->ppid());
+    t.add_fmt("%0.1f", p->stime_s() + p->utime_s());
     t.add(p->nice());
     t.add_fmt("%0.1f", p->uss_mb());
     t.add_fmt("%0.1f", p->pss_mb());

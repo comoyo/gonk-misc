@@ -6,16 +6,18 @@ PRODUCT_PACKAGES += \
 	b2g.sh \
 	b2g-info \
 	b2g-ps \
-	fakeperm \
-	fakesched \
+	gonksched \
+	fakeappops \
+	fs_config \
 	gaia \
 	gecko \
 	init.rc \
 	init.b2g.rc \
 	killer \
+	libttspico \
 	rild \
 	rilproxy \
-	sources.xml \
+	oom-msg-logger \
 	$(NULL)
 
 ifneq ($(B2G_VALGRIND),)
@@ -30,6 +32,11 @@ endif
 ifeq ($(ENABLE_LIBRECOVERY),true)
 PRODUCT_PACKAGES += \
   librecovery
+endif
+
+ifneq ($(DISABLE_SOURCES_XML),true)
+PRODUCT_PACKAGES += \
+	sources.xml
 endif
 
 ifneq ($(or $(B2G_PROFILING),0),0)
