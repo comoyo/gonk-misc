@@ -20,13 +20,16 @@ PRODUCT_PACKAGES += \
 	oom-msg-logger \
 	$(NULL)
 
-ifneq ($(B2G_VALGRIND),)
+-include external/svox/pico/lang/all_pico_languages.mk
+-include gaia/gaia.mk
+
+ifeq ($(B2G_VALGRIND),1)
 include external/valgrind/valgrind.mk
 endif
 
 ifeq ($(ENABLE_DEFAULT_BOOTANIMATION),true)
 PRODUCT_COPY_FILES += \
-	gonk-misc/bootanimation.zip:system/media/bootanimation.zip 
+	gonk-misc/bootanimation.zip:system/media/bootanimation.zip
 endif
 
 ifeq ($(ENABLE_LIBRECOVERY),true)

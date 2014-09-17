@@ -228,7 +228,7 @@ endif
 
 # Target to create Gecko update package (MAR)
 DIST_B2G_UPDATE_DIR := $(GECKO_OBJDIR)/dist/b2g-update
-UPDATE_PACKAGE_TARGET := $(DIST_B2G_UPDATE_DIR)/b2g-gecko-update.mar
+UPDATE_PACKAGE_TARGET := $(DIST_B2G_UPDATE_DIR)/b2g-$(TARGET_DEVICE)-gecko-update.mar
 MAR := $(GECKO_OBJDIR)/dist/host/bin/mar
 MAKE_FULL_UPDATE := $(GECKO_PATH)/tools/update-packaging/make_full_update.sh
 
@@ -250,13 +250,13 @@ gecko-update-full:
 	MAR=$(MAR) $(MAKE_FULL_UPDATE) $(UPDATE_PACKAGE_TARGET) $(TARGET_OUT)/b2g
 	shasum -a 512 $(UPDATE_PACKAGE_TARGET)
 
-GECKO_MAKE_FLAGS ?= -j16
 GECKO_LIB_DEPS := \
 	libc.so \
 	libdl.so \
 	liblog.so \
 	libm.so \
 	libmedia.so \
+	libmtp.so \
 	libsensorservice.so \
 	libstagefright.so \
 	libstagefright_omx.so \
@@ -269,6 +269,18 @@ endif
 
 ifneq ($(wildcard system/core/libsuspend),)
 GECKO_LIB_DEPS += libsuspend.so
+endif
+
+ifneq ($(strip $(SHOW_COMMANDS)),)
+SKIP_DASH_S = 1
+endif
+
+ifneq ($(strip $(FORCE_GECKO_BUILD_OUTPUT)),)
+SKIP_DASH_S = 1
+endif
+
+ifneq ($(strip $(SKIP_DASH_S)),1)
+SHOW_COMMAND_GECKO = -s
 endif
 
 .PHONY: $(LOCAL_BUILT_MODULE)
@@ -286,15 +298,14 @@ $(LOCAL_BUILT_MODULE): $(TARGET_CRTBEGIN_DYNAMIC_O) $(TARGET_CRTEND_O) $(addpref
 	export GONK_PATH="$(abspath .)" && \
 	export GECKO_OBJDIR="$(abspath $(GECKO_OBJDIR))" && \
 	export USE_CACHE=$(USE_CCACHE) && \
-	export MAKE_FLAGS="$(GECKO_MAKE_FLAGS)" && \
 	export MOZCONFIG="$(abspath $(MOZCONFIG_PATH))" && \
 	export EXTRA_INCLUDE="-include $(UNICODE_HEADER_PATH)" && \
 	export DISABLE_JEMALLOC="$(DISABLE_JEMALLOC)" && \
 	export B2G_UPDATER="$(B2G_UPDATER)" && \
 	export B2G_UPDATE_CHANNEL="$(B2G_UPDATE_CHANNEL)" && \
 	export ARCH_ARM_VFP="$(ARCH_ARM_VFP)" && \
-	echo $(MAKE) -C $(GECKO_PATH) -f client.mk -s && \
-	$(MAKE) -C $(GECKO_PATH) -f client.mk -s && \
+	echo $(MAKE) -C $(GECKO_PATH) -f client.mk $(SHOW_COMMAND_GECKO) MOZ_MAKE_FLAGS= && \
+	$(MAKE) -C $(GECKO_PATH) -f client.mk $(SHOW_COMMAND_GECKO) MOZ_MAKE_FLAGS= && \
 	rm -f $(GECKO_OBJDIR)/dist/b2g-*.tar.gz && \
 	for LOCALE in $(MOZ_CHROME_MULTILOCALE); do \
           $(MAKE) -C $(GECKO_OBJDIR)/b2g/locales merge-$$LOCALE LOCALE_MERGEDIR=$(GECKO_OBJDIR)/b2g/locales/merge-$$LOCALE && \
@@ -351,14 +362,14 @@ $(EMULATOR_ARCHIVE): $(EMULATOR_FILES)
 	rm -f $@ && \
 	tar -cvzf $@ --transform 's,^,b2g-distro/,S' --show-transformed-names $^
 
-.PHONY: gecko-update-fota gecko-update-fota-full
-gecko-update-fota: $(PRODUCT_OUT)/fota-update.mar
-gecko-update-fota-full: $(PRODUCT_OUT)/fota-update-full.mar
-
-B2G_FOTA_UPDATE_MAR := fota-update.mar
-B2G_FOTA_UPDATE_FULL_MAR := fota-update-full.mar
+B2G_FOTA_UPDATE_MAR := fota-$(TARGET_DEVICE)-update.mar
+B2G_FOTA_UPDATE_FULL_MAR := fota-$(TARGET_DEVICE)-update-full.mar
 B2G_FOTA_UPDATE_ZIP := fota/partial/update.zip
 B2G_FOTA_UPDATE_FULL_ZIP := fota/full/update.zip
+
+.PHONY: gecko-update-fota gecko-update-fota-full
+gecko-update-fota: $(PRODUCT_OUT)/$(B2G_FOTA_UPDATE_MAR)
+gecko-update-fota-full: $(PRODUCT_OUT)/$(B2G_FOTA_UPDATE_FULL_MAR)
 
 B2G_FOTA_FSTYPE := yaffs2
 B2G_FOTA_SYSTEM_PARTITION := "system"
@@ -370,19 +381,37 @@ B2G_FOTA_SYSTEM_FILES := $(PRODUCT_OUT)/system.files
 define detect-fstype
   $(if $(filter true, $(INTERNAL_USERIMAGES_USE_EXT)),
     $(eval B2G_FOTA_FSTYPE := $(INTERNAL_USERIMAGES_EXT_VARIANT)))
+  $(if $(filter true, $(TARGET_USERIMAGES_USE_UBIFS)),
+    $(eval B2G_FOTA_FSTYPE := "ubifs"))
   $(info Using $(B2G_FOTA_FSTYPE) filesystem)
 endef
 
 FSTAB_TYPE := recovery
 # $(1): recovery_fstab
+#
+# Android recovery fstab file format is like:
+# /system ext4 /dev/...
+#
+# Linux fstab file format is like:
+# /dev/... /system ext4
+#
+# Linux fstab file format is also like(ubifs):
+# system /system ubifs
+#
+# We will first probe for any line starting with '/dev' or
+# NOT starting with '/' that contains /system.
+# If we find any, it means we have a Linux fstab.
+# Otherwise it means it's an Android recovery fstab.
 define detect-partitions
   $(eval FSTAB_FILE := $(basename $(notdir $(1))))
 
   $(if $(FSTAB_FILE),
-    $(if $(filter fstab, $(FSTAB_FILE)),
+    $(eval STARTS_WITH_DEV := $(shell grep '^/dev/' $(1) | grep '/system'))
+    $(eval STARTS_WITH_NAME := $(shell grep -v '^\#' $(1) | grep -v '^/' | grep '/system'))
+    $(if $(filter /system, $(STARTS_WITH_DEV) $(STARTS_WITH_NAME)),
       $(eval FSTAB_TYPE := linux))
 
-    $(info Extracting partitions from $(FSTAB_TYPE) fstab)
+    $(info Extracting partitions from $(FSTAB_TYPE) fstab ($(1)))
 
     $(if $(filter linux, $(FSTAB_TYPE)),
       $(eval B2G_FOTA_SYSTEM_PARTITION := $(shell grep -v '^\#' $(1) | grep '\s\+/system\s\+' | awk '{ print $$1 }'))
@@ -414,9 +443,15 @@ define detect-partitions
   $(info Mounting /data   from $(B2G_FOTA_DATA_PARTITION))
 endef
 
+define detect-update-bin
+  $(if $(wildcard $(TARGET_UPDATE_BINARY)),
+    $(eval FOTA_UPDATE_BIN := --update-bin $(TARGET_UPDATE_BINARY)))
+endef
+
 define setup-fs
   $(call detect-fstype)
   $(call detect-partitions,$(recovery_fstab))
+  $(call detect-update-bin)
 endef
 
 B2G_FOTA_FLASH_SCRIPT := tools/update-tools/build-flash-fota.py
@@ -441,7 +476,9 @@ $(PRODUCT_OUT)/$(B2G_FOTA_UPDATE_ZIP): $(B2G_FOTA_SYSTEM_FILES) $(PRODUCT_OUT)/s
 	mkdir -p `dirname $@` || true
 	$(call setup-fs)
 	$(info Generating FOTA update package)
-	@PATH=$(B2G_FOTA_ENV_PATH) $(B2G_FOTA_FLASH_SCRIPT) \
+	@PATH="$(B2G_FOTA_ENV_PATH)" $(B2G_FOTA_FLASH_SCRIPT) \
+	    $(FOTA_UPDATE_BIN) \
+	    --sdk-version $(PLATFORM_SDK_VERSION) \
 	    --system-dir $(PRODUCT_OUT)/system \
 	    --system-fs-type $(B2G_FOTA_FSTYPE) \
 	    --system-location $(B2G_FOTA_SYSTEM_PARTITION) \
@@ -450,16 +487,21 @@ $(PRODUCT_OUT)/$(B2G_FOTA_UPDATE_ZIP): $(B2G_FOTA_SYSTEM_FILES) $(PRODUCT_OUT)/s
 	    --fota-type partial \
 	    --fota-dirs "$(B2G_FOTA_DIRS)" \
 	    --fota-files $(B2G_FOTA_SYSTEM_FILES) \
+	    --fota-check-device-name "$(TARGET_DEVICE)" \
+	    --fota-check-gonk-version \
 	    --output $@
 
 $(PRODUCT_OUT)/$(B2G_FOTA_UPDATE_FULL_ZIP): $(PRODUCT_OUT)/system.img
 	mkdir -p `dirname $@` || true
 	$(call setup-fs)
 	$(info Generating full FOTA update package)
-	@PATH=$(B2G_FOTA_ENV_PATH) $(B2G_FOTA_FLASH_SCRIPT) \
+	@PATH="$(B2G_FOTA_ENV_PATH)" $(B2G_FOTA_FLASH_SCRIPT) \
+	    $(FOTA_UPDATE_BIN) \
+	    --sdk-version $(PLATFORM_SDK_VERSION) \
 	    --system-dir $(PRODUCT_OUT)/system \
 	    --system-fs-type $(B2G_FOTA_FSTYPE) \
 	    --system-location $(B2G_FOTA_SYSTEM_PARTITION) \
 	    --data-fs-type $(B2G_FOTA_FSTYPE) \
 	    --data-location $(B2G_FOTA_DATA_PARTITION) \
+	    --fota-check-device-name "$(TARGET_DEVICE)" \
 	    --output $@
